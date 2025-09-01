@@ -1,3 +1,4 @@
+use log::info;
 use reqwest::Client;
 
 pub trait HttpClient {
@@ -49,10 +50,11 @@ impl HttpClient for ApiClient {
     }
 
     async fn post(&self, url: &str, body: serde_json::Value) -> Result<String, reqwest::Error> {
+        info!("foo: {}", self.bearer_token);
         let res = self
             .client
             .post(url)
-            .bearer_auth(&self.bearer_token)
+            .header(reqwest::header::AUTHORIZATION, &self.bearer_token)
             .json(&body)
             .send()
             .await?
