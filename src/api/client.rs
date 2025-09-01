@@ -11,12 +11,12 @@ pub trait HttpClient {
         &self,
         url: &str,
         body: serde_json::Value,
-    ) -> impl std::future::Future<Output = Result<String, reqwest::Error>> + Send;
+    ) -> impl std::future::Future<Output = Result<Response, reqwest::Error>> + Send;
 }
 
-struct Response {
-    status: u16,
-    content: String,
+pub struct Response {
+    pub status: u16,
+    pub content: String,
 }
 
 #[derive(Debug, Clone)]
@@ -49,7 +49,7 @@ impl HttpClient for ApiClient {
         Ok(res)
     }
 
-    async fn post(&self, url: &str, body: serde_json::Value) -> Result<String, reqwest::Error> {
+    async fn post(&self, url: &str, body: serde_json::Value) -> Result<Response, reqwest::Error> {
         info!("foo: {}", self.bearer_token);
         let res = self
             .client
@@ -61,7 +61,11 @@ impl HttpClient for ApiClient {
             .text()
             .await?;
 
-        Ok(res)
+        let response = Response {
+            status: 200,
+            content: res,
+        };
+        Ok(response)
     }
 }
 
@@ -86,8 +90,15 @@ mod test {
                 &self,
                 url: &str,
                 _body: serde_json::Value,
-            ) -> Result<String, reqwest::Error> {
-                Ok(format!("POST {url}").to_string())
+            ) -> Result<Response, reqwest::Error> {
+                let res = format!("POST {url}").to_string();
+
+                let response = Response {
+                    content: res,
+                    status: 200,
+                };
+
+                Ok(response)
             }
         }
 

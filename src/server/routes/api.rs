@@ -4,11 +4,13 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
+use log::warn;
 use reqwest::StatusCode;
 use serde::Deserialize;
 
 use crate::{
-    api::client::{ApiClient, HttpClient}, twitter::tweet::create,
+    api::client::{ApiClient, HttpClient},
+    twitter::tweet::create,
 };
 
 #[derive(Debug, Clone)]
@@ -51,10 +53,16 @@ async fn create_tweet(
     let resp = create(state.api_client, payload).await;
 
     match resp {
-        Ok(r) => (StatusCode::OK, r),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("HTTP error: {e}"),
+        Ok(res) => (
+            StatusCode::from_u16(res.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            res.content,
         ),
+        Err(err) => {
+            warn!("{}", err);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Somethin broke: {}", err),
+            )
+        }
     }
 }
