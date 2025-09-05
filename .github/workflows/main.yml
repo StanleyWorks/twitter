@@ -172,11 +172,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --yes --import
-          # Set up gnupg directory permissions
+          # Set up gnupg directory first
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
-          # Use loopback pinentry to allow non-interactive signing
+          
+          # Import the GPG key
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --yes --import
+          
+          # List secret keys to verify import and capture key ID
+          echo "Verifying secret key import:"
+          gpg --list-secret-keys --keyid-format LONG
+          
+          # Get the key ID for signing (first secret key)
+          GPG_KEY_ID=$(gpg --list-secret-keys --with-colons | grep '^sec:' | head -n1 | cut -d: -f5)
+          echo "Using GPG key ID: $GPG_KEY_ID"
+          echo "GPG_KEY_ID=$GPG_KEY_ID" >> $GITHUB_ENV
+          
+          # Configure GPG for non-interactive signing
           echo "use-agent" >> ~/.gnupg/gpg.conf
           echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
           chmod 600 ~/.gnupg/gpg.conf
@@ -190,13 +202,14 @@ jobs:
           set -euo pipefail
           cd artifacts
           # One combined checksums file is friendlier for users
-          find . -type f -name "*.tar.gz" -print0 | xargs -0 -I{} sha256sum "{}" > SHA256SUMS
-          # Sign the checksum file (armoured detached signature)
-          echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 --armor --detach-sign SHA256SUMS
+          find . -type f -name "*.tar.gz" -print0 | xargs -0 sha256sum > SHA256SUMS
+          
+          # Sign the checksum file (armoured detached signature) using the specific key
+          echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 --armor --detach-sign --local-user "$GPG_KEY_ID" SHA256SUMS
 
           # Also sign each archive individually (optional but nice)
           while IFS= read -r -d '' f; do
-            echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 --armor --detach-sign "$f"
+            echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 --armor --detach-sign --local-user "$GPG_KEY_ID" "$f"
           done < <(find . -type f -name "*.tar.gz" -print0)
 
       - name: Generate SHA256SUMS without signatures
@@ -206,7 +219,7 @@ jobs:
           set -euo pipefail
           cd artifacts
           # One combined checksums file is friendlier for users
-          find . -type f -name "*.tar.gz" -print0 | xargs -0 -I{} sha256sum "{}" > SHA256SUMS
+          find . -type f -name "*.tar.gz" -print0 | xargs -0 sha256sum > SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
