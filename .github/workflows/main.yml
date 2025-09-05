@@ -3,9 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - 'v*' # e.g. v0.1.0
+      - 'v*'
 
-# Required for creating releases
 permissions:
   contents: write
 
@@ -28,9 +27,7 @@ jobs:
 
       - name: Install git-cliff
         uses: kenji-miyake/setup-git-cliff@v2
-
-      # Expect a cliff.toml in repo configured for GH-friendly output.
-      # If not, git-cliff still works with defaults.
+        
       - name: Generate CHANGELOG.md
         id: changelog
         shell: bash
@@ -161,10 +158,6 @@ jobs:
       - name: List artifacts
         run: find artifacts -type f -maxdepth 2 -name "*.tar.gz" -print
 
-      # --- GPG signing block ---
-      # Requires these secrets:
-      #   GPG_PRIVATE_KEY: ASCII-armoured private key
-      #   GPG_PASSPHRASE:  passphrase (if any)
       - name: Import GPG key
         if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
         shell: bash
@@ -199,7 +192,7 @@ jobs:
         with:
           body: ${{ steps.get-changelog.outputs.changelog }}
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }} # treat v1.2.3-rc1 as prerelease
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.tar.gz.asc
