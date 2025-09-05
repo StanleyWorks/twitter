@@ -36,7 +36,7 @@ jobs:
           # Generate full changelog; git-cliff detects the latest tag context.
           git cliff --output CHANGELOG.md
           {
-            echo "changelog<<'EOF'"
+            echo "changelog<<EOF"
             cat CHANGELOG.md
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -150,7 +150,7 @@ jobs:
           CHANGELOG_PATH="artifacts/changelog/CHANGELOG.md"
           test -f "$CHANGELOG_PATH" || { echo "Missing changelog artifact"; exit 1; }
           {
-            echo "changelog<<'EOF'"
+            echo "changelog<<EOF"
             cat "$CHANGELOG_PATH"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -158,18 +158,31 @@ jobs:
       - name: List artifacts
         run: find artifacts -type f -maxdepth 2 -name "*.tar.gz" -print
 
+      - name: Check for GPG key
+        id: check_gpg
+        run: |
+          if [ -n "${{ secrets.GPG_PRIVATE_KEY }}" ]; then
+            echo "has_gpg_key=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_gpg_key=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Import GPG key
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: steps.check_gpg.outputs.has_gpg_key == 'true'
         shell: bash
         run: |
           set -euo pipefail
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --yes --import
+          # Set up gnupg directory permissions
+          mkdir -p ~/.gnupg
+          chmod 700 ~/.gnupg
           # Use loopback pinentry to allow non-interactive signing
           echo "use-agent" >> ~/.gnupg/gpg.conf
           echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          chmod 600 ~/.gnupg/gpg.conf
 
       - name: Generate SHA256SUMS and signatures
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+        if: steps.check_gpg.outputs.has_gpg_key == 'true'
         shell: bash
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
@@ -179,12 +192,21 @@ jobs:
           # One combined checksums file is friendlier for users
           find . -type f -name "*.tar.gz" -print0 | xargs -0 -I{} sha256sum "{}" > SHA256SUMS
           # Sign the checksum file (armoured detached signature)
-          gpg --batch --yes --passphrase "$GPG_PASSPHRASE" --armor --detach-sign SHA256SUMS
+          echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 --armor --detach-sign SHA256SUMS
 
           # Also sign each archive individually (optional but nice)
           while IFS= read -r -d '' f; do
-            gpg --batch --yes --passphrase "$GPG_PASSPHRASE" --armor --detach-sign "$f"
+            echo "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 --armor --detach-sign "$f"
           done < <(find . -type f -name "*.tar.gz" -print0)
+
+      - name: Generate SHA256SUMS without signatures
+        if: steps.check_gpg.outputs.has_gpg_key != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts
+          # One combined checksums file is friendlier for users
+          find . -type f -name "*.tar.gz" -print0 | xargs -0 -I{} sha256sum "{}" > SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
